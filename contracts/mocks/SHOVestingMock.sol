@@ -6,7 +6,7 @@ import "../SHOVesting.sol";
 contract SHOVestingMock is SHOVesting {
     constructor(
         IERC20 _vestingToken,
-        address _feeCollector,
+        address _eliminator,
         uint _startTime,
         uint _firstUnlockPercentage,
         uint _linearVestingOffset,
@@ -14,11 +14,11 @@ contract SHOVestingMock is SHOVesting {
         uint _linearUnlocksCount,
         uint _batch1Percentage,
         uint _batch2Delay,
-        uint _lockedClaimableTokensOffset,
+        uint40 _lockedClaimableTokensOffset,
         uint16 _burnRate
     ) SHOVesting (
         _vestingToken,
-        _feeCollector,
+        _eliminator,
         _startTime,
         _firstUnlockPercentage,
         _linearVestingOffset,
