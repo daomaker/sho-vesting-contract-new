@@ -128,13 +128,18 @@ describe("SHO Vesting Smart Contract", function() {
             await init();
         });
 
-        it("reverts if the sender is not the owner", async() => {
-            await expect(contract.connect(user1).setManager(owner.address)).to.be.revertedWith("Ownable");
+        it("reverts if the sender is not the owner or manager", async() => {
+            await expect(contract.connect(user1).setManager(owner.address)).to.be.revertedWith("manager or owner only");
+        });
+        
+        it("sets manager", async() => {
+            await contract.connect(manager).setManager(user1.address);
+            expect(await contract.manager()).to.equal(user1.address);
         });
 
         it("sets manager", async() => {
-            await contract.connect(owner).setManager(owner.address);
-            expect(await contract.manager()).to.equal(owner.address);
+            await contract.connect(owner).setManager(manager.address);
+            expect(await contract.manager()).to.equal(manager.address);
         });
     });
 

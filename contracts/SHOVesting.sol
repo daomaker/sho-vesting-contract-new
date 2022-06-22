@@ -91,7 +91,8 @@ contract SHOVesting is Ownable, ReentrancyGuard {
 
     // =================== RISTRICTED ASCCESS FUNCTIONS  =================== //
 
-    function setManager(address _manager) external onlyOwner {
+    function setManager(address _manager) external {
+        require(msg.sender == owner() || msg.sender == manager, "manager or owner only");
         require(_manager != address(0));
         manager = _manager;
     }
