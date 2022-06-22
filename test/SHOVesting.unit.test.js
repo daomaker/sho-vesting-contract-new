@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO Vesting Smart Contract", function() {
-    let owner, eliminator, user1, user2, user3, contract, vestingToken, vestingTokenDecimals, settings;
+    let owner, manager, user1, user2, user3, contract, vestingToken, vestingTokenDecimals, settings;
 
     const PRECISION_LOSS = "10000000000000000";
     
@@ -23,7 +23,7 @@ describe("SHO Vesting Smart Contract", function() {
     }
 
     const init = async(_settings = {}) => {
-        [owner, eliminator, user1, user2, user3] = await ethers.getSigners();
+        [owner, manager, user1, user2, user3] = await ethers.getSigners();
 
         settings = {
             startTime: _settings.startTime ?? Number(await time.latest()),
@@ -44,7 +44,7 @@ describe("SHO Vesting Smart Contract", function() {
         const Contract = await ethers.getContractFactory("SHOVestingMock");
         contract = await Contract.deploy(
             vestingToken.address,
-            eliminator.address,
+            manager.address,
             settings.startTime,
             settings.firstUnlockPercentage,
             settings.linearVestingOffset,
@@ -55,6 +55,8 @@ describe("SHO Vesting Smart Contract", function() {
             settings.lockedClaimableTokensOffset,
             settings.burnRate
         );
+
+        await vestingToken.transfer(contract.address, parseUnits(100000000));
     }
 
     const setUserStats = async(user, stats = {}) => {
@@ -80,8 +82,8 @@ describe("SHO Vesting Smart Contract", function() {
             expect(await contract.vestingToken()).to.equal(vestingToken.address);
         });
 
-        it("sets attribute eliminator correctly", async () => {
-            expect(await contract.eliminator()).to.equal(eliminator.address);
+        it("sets attribute manager correctly", async () => {
+            expect(await contract.manager()).to.equal(manager.address);
         });
 
         it("sets attribute startTime correctly", async () => {
@@ -121,18 +123,18 @@ describe("SHO Vesting Smart Contract", function() {
         });
     });
 
-    describe("setEliminator", async() => {
+    describe("setManager", async() => {
         before(async() => {
             await init();
         });
 
         it("reverts if the sender is not the owner", async() => {
-            await expect(contract.connect(user1).setEliminator(owner.address)).to.be.revertedWith("");
+            await expect(contract.connect(user1).setManager(owner.address)).to.be.revertedWith("Ownable");
         });
 
-        it("sets eliminator", async() => {
-            await contract.connect(owner).setEliminator(owner.address);
-            expect(await contract.eliminator()).to.equal(owner.address);
+        it("sets manager", async() => {
+            await contract.connect(owner).setManager(owner.address);
+            expect(await contract.manager()).to.equal(owner.address);
         });
     });
 
@@ -142,7 +144,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("reverts if the sender is not the owner", async() => {
-            await expect(contract.connect(user1).setBurnRate(1000)).to.be.revertedWith("");
+            await expect(contract.connect(user1).setBurnRate(1000)).to.be.revertedWith("Ownable");
         });
 
         it("reverts if lower than MIN_BURN_RATE", async() => {
@@ -165,7 +167,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("reverts if the sender is not the owner", async() => {
-            await expect(contract.connect(user1).setLockedClaimableTokensOffset(1000)).to.be.revertedWith("");
+            await expect(contract.connect(user1).setLockedClaimableTokensOffset(1000)).to.be.revertedWith("Ownable");
         });
 
         it("sets lockedClaimableTokensOffset", async() => {
@@ -187,7 +189,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("reverts if the sender is not the owner", async() => {
-            await expect(contract.connect(user1).whitelist([], [], [], [], false)).to.be.revertedWith("");
+            await expect(contract.connect(user1).whitelist([], [], [], [], false)).to.be.revertedWith("Ownable");
         });
 
         it("whitelist batch 1", async() => {
@@ -254,8 +256,9 @@ describe("SHO Vesting Smart Contract", function() {
 
     describe("eliminate", async() => {
         before(async() => {
-            await init();
-            await time.increase(119 * 86400);
+            await init({
+                startTime: Number(await time.latest()) + 10
+            });
             await setUserStats(user1, {
                 totalTokens: parseUnits(5000),
                 totalFee: parseUnits(200),
@@ -263,16 +266,21 @@ describe("SHO Vesting Smart Contract", function() {
             });
         });
 
-        it("reverts if the sender is not the eliminator", async() => {
-            await expect(contract.connect(user1).eliminate([])).to.be.revertedWith("");
+        it("reverts before start", async() => {
+            await expect(contract.connect(manager).eliminate([])).to.be.revertedWith("eliminating before start");
+        });
+
+        it("reverts if the sender is not the manager", async() => {
+            await time.increase(119 * 86400 + 10);
+            await expect(contract.connect(user1).eliminate([])).to.be.revertedWith("manager only");
         });
 
         it("eliminates", async() => {
-            await contract.connect(eliminator).eliminate([user1.address]);
+            await contract.connect(manager).eliminate([user1.address]);
         });
 
         it("reverts if eliminating already eliminated user", async() => {
-            await expect(contract.connect(eliminator).eliminate([user1.address])).to.be.revertedWith("some users are already eliminated");
+            await expect(contract.connect(manager).eliminate([user1.address])).to.be.revertedWith("some users are already eliminated");
         });
 
         it("increased user's totalFee", async() => {
@@ -290,19 +298,195 @@ describe("SHO Vesting Smart Contract", function() {
     });
 
     describe("collectFees", async() => {
+        before(async() => {
+            await init();
+            await time.increase(10);
+            await setUserStats(user1, {
+                totalTokens: parseUnits(5000),
+            });
+            await contract.connect(manager).eliminate([user1.address]);
+        });
 
+        it("reverts if the sender is not the manager", async() => {
+            await expect(contract.connect(user1).collectFees(parseUnits(1))).to.be.revertedWith("manager only");
+        });
+
+        it("the manager collects some fees", async() => {
+            await contract.connect(manager).collectFees(parseUnits(1000));
+        });
+
+        it("the owner receives the tokens", async() => {
+            expect(await vestingToken.balanceOf(owner.address)).to.equal(parseUnits(1000));
+        });
+
+        it("increased totalFeeCollected", async() => {
+            expect(await contract.totalFeeCollected()).to.equal(parseUnits(1000));
+        });
+
+        it("caps at max claimable amount", async() => {
+            await contract.connect(manager).collectFees(parseUnits(5000));
+            expect(await contract.totalFeeCollected()).to.equal(parseUnits(4000));
+        });
+
+        it("reverts if no fees to collect", async() => {
+            await expect(contract.connect(manager).collectFees(parseUnits(5000))).to.be.revertedWith("no fees to collect");
+        });
     });
 
     describe("claim", async() => {
+        before(async() => {
+            await init({
+                startTime: Number(await time.latest()) + 10
+            });
 
+            await setUserStats(user1, {
+                totalTokens: parseUnits(5000),
+            });
+        });
+
+        it("reverts when 0 claimable amount", async() => {
+            await expect(contract.connect(user1).claim()).to.be.revertedWith("nothing to claim");
+        });
+
+        it("a user claims the first unlock and 1 linear unlock", async() => {
+            await time.increase(settings.linearVestingOffset + 10);
+            await contract.connect(user1).claim();
+        });
+
+        it("the user received the tokens", async() => {
+            expect(await vestingToken.balanceOf(user1.address)).to.equal(parseUnits(1020));
+        });
+
+        it("increased user's totalClaimed1", async() => {
+            expect((await contract.users(user1.address)).totalClaimed1).to.equal(parseUnits(306));
+        });
+
+        it("increased user's totalClaimed2", async() => {
+            expect((await contract.users(user1.address)).totalClaimed2).to.equal(parseUnits(714));
+        });
+
+        it("increased user's totalClaimed", async() => {
+            expect((await contract.users(user1.address)).totalClaimed).to.equal(parseUnits(1020));
+        });
+
+        it("increased global totalClaimed", async() => {
+            expect(await contract.totalClaimed()).to.equal(parseUnits(1020));
+        });
+
+        it("hasn't increased user's totalFee", async() => {
+            expect((await contract.users(user1.address)).totalFee).to.equal(0);
+        });
+
+        it("hasn't increased global totalFee", async() => {
+            expect(await contract.totalFee()).to.equal(0);
+        });
     });
 
     describe("claimFor", async() => {
-        
+        before(async() => {
+            await init({
+                startTime: Number(await time.latest()) + 10
+            });
+
+            await setUserStats(user1, {
+                totalTokens: parseUnits(5000),
+            });
+        });
+
+        it("a user claims for another user the first unlock and 1 linear unlock", async() => {
+            await time.increase(settings.linearVestingOffset + 10);
+            await contract.connect(user2).claimFor(user1.address);
+        });
+
+        it("the token receiver is the passed user address", async() => {
+            expect(await vestingToken.balanceOf(user1.address)).to.equal(parseUnits(1020));
+        });
+
+        it("hasn't increased user's totalFee", async() => {
+            expect((await contract.users(user1.address)).totalFee).to.equal(0);
+        });
+
+        it("hasn't increased global totalFee", async() => {
+            expect(await contract.totalFee()).to.equal(0);
+        });
     });
 
     describe("claimWithExtra", async() => {
-        
+        before(async() => {
+            await init({
+                startTime: Number(await time.latest()) + 10
+            });
+
+            await setUserStats(user1, {
+                hasBatch2Delay: true,
+                totalTokens: parseUnits(5000),
+            });
+        });
+
+        it("reverts when requested claim amount is less than max claimable amount", async() => {
+            await time.increase(settings.linearVestingOffset + 10);
+            await expect(contract.connect(user1).claimWithExtra(parseUnits(1000))).to.be.revertedWith("requested claim amount > max claimable");
+        });
+
+        it("a user claims extra from batch 2", async() => {
+            await contract.connect(user1).claimWithExtra(parseUnits(14));
+        });
+
+        it("increased user's totalClaimed2", async() => {
+            expect((await contract.users(user1.address)).totalClaimed2).to.equal(parseUnits(714));
+        });
+
+        it("increased user's totalFee", async() => {
+            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(14));
+        });
+
+        it("hasnn't increased user's totalClaimedFromLocked", async() => {
+            expect((await contract.users(user1.address)).totalClaimedFromLocked).to.equal(0);
+        });
+
+        it("a user claims from locked", async() => {
+            await contract.connect(user1).claimWithExtra(parseUnits(100));
+        });
+
+        it("increased user's totalClaimedFromLocked", async() => {
+            expect((await contract.users(user1.address)).totalClaimedFromLocked).to.equal(parseUnits(100));
+        });
+
+        it("increased user's totalFee", async() => {
+            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(414));
+        });
+
+        it("caps fee at user's totalTokens - (claimedFromBatch1 + claimedFromBatch2 + claimedFromLocked)", async() => {
+            await time.increase(settings.linearVestingPeriod * settings.linearUnlocksCount);
+            await contract.connect(user1).claimWithExtra(parseUnits(1000));
+            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(660));
+        });
+
+        describe("when burnRate is 100% ", async() => {
+            before(async() => {
+                await init({
+                    burnRate: 1000,
+                    startTime: Number(await time.latest()) + 10
+                });
+    
+                await setUserStats(user1, {
+                    totalTokens: parseUnits(5000),
+                });
+            });
+
+            it("0 claimable from locked", async() => {
+                await time.increase(settings.linearVestingOffset + 10);
+                await expect(contract.connect(user1).claimWithExtra(parseUnits(1))).to.be.revertedWith("requested claim amount > max claimable");
+            });
+
+            it("a user claims all unlocked", async() => {
+               await contract.connect(user1).claimWithExtra(parseUnits(0));
+            });
+
+            it("hasnn't increased user's totalClaimedFromLocked", async() => {
+                expect((await contract.users(user1.address)).totalClaimedFromLocked).to.equal(0);
+            });
+        });
     });
 
     describe("getVestingSchedule", async() => {
@@ -359,7 +543,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("when eliminated", async() => {
-            await contract.connect(eliminator).eliminate([user1.address]);
+            await contract.connect(manager).eliminate([user1.address]);
             await time.increase(200 * settings.linearVestingPeriod);
             expect(await contract.getUnlocked(user1.address)).to.equal(parseUnits(1770)); 
         });
@@ -414,7 +598,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("when eliminated", async() => {
-            await contract.connect(eliminator).eliminate([user1.address]);
+            await contract.connect(manager).eliminate([user1.address]);
             await time.increase(settings.linearVestingPeriod);
             expect(await contract.getUnlocked1(user1.address)).to.equal(parseUnits(323.4));
         });
@@ -456,7 +640,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("when eliminated", async() => {
-            await contract.connect(eliminator).eliminate([user1.address]);
+            await contract.connect(manager).eliminate([user1.address]);
             await time.increase(settings.linearVestingPeriod);
             expect(await contract.getUnlocked2(user1.address)).to.equal(parseUnits(1454.6));
         });
