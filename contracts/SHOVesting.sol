@@ -70,10 +70,10 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     ) {
         require(address(_vestingToken) != address(0));
         require(_manager != address(0));
-        require(_firstUnlockPercentage >= 0 && _firstUnlockPercentage <= HUNDRED_PERCENT);
+        require(_firstUnlockPercentage <= HUNDRED_PERCENT);
         require(_linearVestingPeriod > 0);
         require(_linearUnlocksCount > 0);
-        require(_batch1Percentage >= 0 && _batch1Percentage <= HUNDRED_PERCENT);
+        require(_batch1Percentage <= HUNDRED_PERCENT);
         require(_burnRate >= MIN_BURN_RATE && _burnRate <= HUNDRED_PERCENT);
 
         vestingToken = _vestingToken;
