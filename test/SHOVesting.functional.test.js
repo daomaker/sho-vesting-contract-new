@@ -120,7 +120,12 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("verify return values", async() => {
-            await time.increase(linearVestingOffset + linearVestingPeriod * 70)
+            await time.increase(10);
+            await verifyReturnValues(user1, 1000, 0, 1000, 300, 0);
+        });
+
+        it("verify return values", async() => {
+            await time.increase(linearVestingOffset + linearVestingPeriod * 70);
             await verifyReturnValues(user1, 2420, 516, 2420, 726, 700);
         });
 
@@ -211,7 +216,11 @@ describe("SHO Vesting Smart Contract", function() {
                 hasBatch2Delay: false,
                 totalTokens: parseUnits(5000)
             });
+        });
 
+        it("verify return values", async() => {
+            await time.increase(10);
+            await verifyReturnValues(user1, 1000, 0, 1000, 300, 700);
         });
 
         it("verify return values", async() => {
