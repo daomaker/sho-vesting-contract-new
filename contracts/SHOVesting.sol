@@ -48,7 +48,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     event Whitelist(address userAddress, uint totalTokens, bool hasBatch2Delay, uint initialFee);
     event Elimination(address userAddress, uint fee, uint eliminatedAt);
     event CollectFees(uint amount);
-    event Claim(address userAddress, uint claimAmount, uint baseClaimAmount, uint fee, uint feeFromBatch2);
+    event Claim(address userAddress, uint claimAmount, uint baseClaimAmount, uint cappedFee);
 
     modifier onlyManager() {
         require(msg.sender == manager, "manager only");
@@ -213,22 +213,23 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         if (burnRate < HUNDRED_PERCENT) {
             feeFromLocked = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
         }
-        uint fee = feeFromBatch2 + feeFromLocked;
-        if (fee > user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount)) {
-            fee = user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount);
+
+        uint cappedFee = feeFromBatch2 + feeFromLocked;
+        if (cappedFee > user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount)) {
+            cappedFee = user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount);
         }
 
         user.totalClaimed1 += claimedFromBatch1.toUint128();
         user.totalClaimed2 += claimedFromBatch2.toUint128();
         user.totalClaimedFromLocked += claimedFromLocked.toUint128();
         user.totalClaimed += (claimedFromBatch1 + claimedFromBatch2 + claimedFromLocked).toUint128();
-        user.totalFee += fee.toUint128();
+        user.totalFee += cappedFee.toUint128();
         
-        totalFee += fee.toUint128();
+        totalFee += cappedFee.toUint128();
         totalClaimed += claimAmount.toUint128();
 
         vestingToken.safeTransfer(userAddress, claimAmount);
-        emit Claim(userAddress, claimAmount, baseClaimAmount, fee, feeFromBatch2);
+        emit Claim(userAddress, claimAmount, baseClaimAmount, cappedFee);
     }
 
     // =================== VIEW FUNCTIONS  =================== //
@@ -269,8 +270,11 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         
         uint totalClaimedAndFee = user.totalClaimed + user.totalFee;
         uint unlocked = getUnlocked(userAddress);
-        if (user.totalTokens > totalClaimedAndFee + unlocked) {
-            uint locked = user.totalTokens - (totalClaimedAndFee + unlocked);
+        uint unlocked1 = getUnlocked1(userAddress);
+        uint unlocked2 = getUnlocked2(userAddress);
+
+        if (user.totalTokens + unlocked1 + unlocked2 > totalClaimedAndFee + unlocked * 2) {
+            uint locked = user.totalTokens + unlocked1 + unlocked2 - (totalClaimedAndFee + unlocked * 2);
             return _applyPercentage(locked, HUNDRED_PERCENT - burnRate);
         }
     }

@@ -126,22 +126,22 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("verify return values", async() => {
             await time.increase(linearVestingOffset + linearVestingPeriod * 70);
-            await verifyReturnValues(user1, 2420, 516, 2420, 726, 700);
+            await verifyReturnValues(user1, 2420, 317, 2420, 726, 700);
         });
 
         it("claim", async() => {
             await claim(user1, 0, 1426, 0);
-            await verifyReturnValues(user1, 2420, 516, 994, 0, 0);
+            await verifyReturnValues(user1, 2420, 317, 994, 0, 0);
         });
         
         it("verify return values", async() => {
             await time.increase(linearVestingPeriod * 70);
-            await verifyReturnValues(user1, 3820, 236, 2394, 420, 714);
+            await verifyReturnValues(user1, 3820, 0, 2394, 420, 714);
         });
 
         it("claim", async() => {
             await claim(user1, 0, 1426 + 1134, 0);
-            await verifyReturnValues(user1, 3820, 236, 1260, 0, 0);
+            await verifyReturnValues(user1, 3820, 0, 1260, 0, 0);
         });
 
         it("verify return values", async() => {
@@ -173,7 +173,7 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("verify return values", async() => {
             await time.increase(linearVestingOffset + linearVestingPeriod * 70);
-            await verifyReturnValues(user1, 2420, 516, 2420, 726, 700);
+            await verifyReturnValues(user1, 2420, 317, 2420, 726, 700);
         });
 
         it("claim", async() => {
@@ -183,7 +183,7 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("verify return values", async() => {
             await time.increase(linearVestingPeriod * 70);
-            await verifyReturnValues(user1, 3820, 236, 406, 121, 0);
+            await verifyReturnValues(user1, 3820, 179, 406, 121, 0);
         });
 
         it("claim", async() => {
@@ -297,17 +297,22 @@ describe("SHO Vesting Smart Contract", function() {
         
         it("verify return values", async() => {
             await time.increase(linearVestingPeriod);
-            await verifyReturnValues(user1, 1000, 800, 1000, 300, 0);
+            await verifyReturnValues(user1, 1000, 660, 1000, 300, 0);
         });
 
         it("claim", async() => {
             await claim(user1, 100, 400, 100);
-            await verifyReturnValues(user1, 1000, 800, 500, 0, 0);
+            await verifyReturnValues(user1, 1000, 700, 500, 0, 0);
         });
 
         it("verify return values", async() => {
             await time.increase(linearVestingPeriod * 3);
-            await verifyReturnValues(user1, 2500, 500, 2000, 420, 530);
+            await verifyReturnValues(user1, 2500, 290, 2000, 420, 530);
+        });
+
+        it("claim", async() => {
+            await claim(user1, 1340, 2690, 2310);
+            await verifyReturnValues(user1, 2500, 0, 0, 0, 0);
         });
     });
 });

@@ -445,7 +445,7 @@ describe("SHO Vesting Smart Contract", function() {
             expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(14));
         });
 
-        it("hasnn't increased user's totalClaimedFromLocked", async() => {
+        it("hasn't increased user's totalClaimedFromLocked", async() => {
             expect((await contract.users(user1.address)).totalClaimedFromLocked).to.equal(0);
         });
 
@@ -558,9 +558,12 @@ describe("SHO Vesting Smart Contract", function() {
         before(async() => {
             await init();
             await setUserStats(user1, {
+                hasBatch2Delay: true,
                 totalTokens: parseUnits(5000),
                 totalFee: parseUnits(200),
-                totalClaimed: parseUnits(1050)
+                totalClaimed: parseUnits(500),
+                totalClaimed1: parseUnits(300),
+                totalClaimed2: parseUnits(200),
             });
         });
 
@@ -570,7 +573,7 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("after lockedClaimableTokensOffset", async() => {
             await time.increase(settings.lockedClaimableTokensOffset);
-            expect(await contract.getLocked(user1.address)).to.equal(parseUnits(3750 * (1e3 - settings.burnRate) / 1e3));
+            expect(await contract.getLocked(user1.address)).to.equal(parseUnits(804));
         });
 
         it("when totalClaimed and totalFee is greater than totalTokens", async() => {
