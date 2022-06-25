@@ -24,6 +24,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint128 totalClaimed2;
         uint128 totalClaimedFromLocked;
     }
+    mapping (address => User) public users;
 
     IERC20 public immutable vestingToken;
     uint public immutable startTime;
@@ -35,15 +36,14 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     uint public immutable batch2Delay;
 
     address public manager;
-    uint128 public totalTokens;
-    uint128 public totalClaimed;
-    uint128 public totalFee;
-    uint128 public totalFeeCollected;
     uint40 public lockedClaimableTokensOffset;
     uint16 public burnRate;
     bool public whitelistingAllowed = true;
 
-    mapping (address => User) public users;
+    uint128 public totalTokens;
+    uint128 public totalClaimed;
+    uint128 public totalFee;
+    uint128 public totalFeeCollected;
 
     event Whitelist(address userAddress, uint totalTokens, bool hasBatch2Delay, uint initialFee);
     event Elimination(address userAddress, uint fee, uint eliminatedAt);
