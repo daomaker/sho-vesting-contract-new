@@ -48,7 +48,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     event Whitelist(address userAddress, uint totalTokens, bool hasBatch2Delay, uint initialFee);
     event Elimination(address userAddress, uint fee, uint eliminatedAt);
     event CollectFees(uint amount);
-    event Claim(address userAddress, uint claimAmount, uint baseClaimAmount, uint cappedFee);
+    event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount);
 
     modifier onlyManager() {
         require(msg.sender == manager, "manager only");
@@ -183,42 +183,22 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     }
 
     function claimWithExtra(uint128 extraClaimAmount) external {
-        _claim(msg.sender, extraClaimAmount);
+        return _claim(msg.sender, extraClaimAmount);
     }
 
     // =================== INTERNAL FUNCTIONS  =================== //
     
     function _claim(address userAddress, uint128 extraClaimAmount) internal nonReentrant {
         User storage user = users[userAddress];
-        uint unlocked = getUnlocked(userAddress);
-        uint unlocked1 = getUnlocked1(userAddress);
-        uint unlocked2 = getUnlocked2(userAddress);
-
-        uint baseClaimAmount = unlocked1 + unlocked2;
-        uint claimAmount = baseClaimAmount + extraClaimAmount;
-        uint maxClaimableAmount = unlocked + getLocked(userAddress);
-
-        require(claimAmount > 0, "nothing to claim");
-        require(claimAmount <= maxClaimableAmount, "requested claim amount > max claimable");
-
-        uint claimedFromBatch1 = unlocked1;
-        uint claimedFromBatch2 = claimAmount - claimedFromBatch1;
-        if (claimedFromBatch2 > unlocked - unlocked1) {
-            claimedFromBatch2 = unlocked - unlocked1;
-        }
-        uint feeFromBatch2 = claimedFromBatch2 - unlocked2;
-
-        uint claimedFromLocked = claimAmount - claimedFromBatch1 - claimedFromBatch2;
-        uint feeFromLocked;
-        if (burnRate < HUNDRED_PERCENT) {
-            feeFromLocked = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
-        }
-
-        uint cappedFee = feeFromBatch2 + feeFromLocked;
-        if (cappedFee > user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount)) {
-            cappedFee = user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount);
-        }
-
+        (
+            uint baseClaimAmount,
+            uint claimAmount,
+            uint claimedFromBatch1, 
+            uint claimedFromBatch2, 
+            uint claimedFromLocked,
+            uint cappedFee
+        ) = calculateClaimedAndFee(userAddress, extraClaimAmount);
+  
         user.totalClaimed1 += claimedFromBatch1.toUint128();
         user.totalClaimed2 += claimedFromBatch2.toUint128();
         user.totalClaimedFromLocked += claimedFromLocked.toUint128();
@@ -229,10 +209,52 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         totalClaimed += claimAmount.toUint128();
 
         vestingToken.safeTransfer(userAddress, claimAmount);
-        emit Claim(userAddress, claimAmount, baseClaimAmount, cappedFee);
+        emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount);
     }
 
     // =================== VIEW FUNCTIONS  =================== //
+
+    function calculateClaimedAndFee(
+        address userAddress, 
+        uint128 extraClaimAmount
+    ) public view returns (
+        uint baseClaimAmount,
+        uint claimAmount,
+        uint claimedFromBatch1, 
+        uint claimedFromBatch2, 
+        uint claimedFromLocked,
+        uint cappedFee
+     ) {
+        User storage user = users[userAddress];
+        uint unlocked = getUnlocked(userAddress);
+        uint unlocked1 = getUnlocked1(userAddress);
+        uint unlocked2 = getUnlocked2(userAddress);
+
+        baseClaimAmount = unlocked1 + unlocked2;
+        claimAmount = baseClaimAmount + extraClaimAmount;
+        uint maxClaimableAmount = unlocked + getLocked(userAddress);
+
+        require(claimAmount > 0, "nothing to claim");
+        require(claimAmount <= maxClaimableAmount, "requested claim amount > max claimable");
+
+        claimedFromBatch1 = unlocked1;
+        claimedFromBatch2 = claimAmount - claimedFromBatch1;
+        if (claimedFromBatch2 > unlocked - unlocked1) {
+            claimedFromBatch2 = unlocked - unlocked1;
+        }
+        uint feeFromBatch2 = claimedFromBatch2 - unlocked2;
+
+        claimedFromLocked = claimAmount - claimedFromBatch1 - claimedFromBatch2;
+        uint feeFromLocked;
+        if (burnRate < HUNDRED_PERCENT) {
+            feeFromLocked = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
+        }
+
+        cappedFee = feeFromBatch2 + feeFromLocked;
+        if (cappedFee > user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount)) {
+            cappedFee = user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount);
+        }
+    }
 
     function getVestingSchedule(address userAddress, bool forBatch2) public view returns (uint) {
         User storage user = users[userAddress];
