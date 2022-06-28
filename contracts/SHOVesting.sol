@@ -49,7 +49,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     event Whitelist(address userAddress, uint totalTokens, bool hasBatch2Delay, uint initialFee);
     event Elimination(address userAddress, uint fee, uint eliminatedAt);
     event CollectFees(uint amount);
-    event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount);
+    event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount, uint feeFromLocked);
 
     modifier onlyManager() {
         require(msg.sender == manager, "manager only");
@@ -163,7 +163,11 @@ contract SHOVesting is Ownable, ReentrancyGuard {
 
     // =================== EXTERNAL FUNCTIONS  =================== //
     
-     function collectFees(address[] calldata userAddresses) external {
+    /**
+        Sends all collectable fees to the owner. The fees are collected with respect to the vesting schedule.
+        @param userAddresses array of addresses to collect the fees from
+     */
+    function collectFees(address[] calldata userAddresses) external {
         uint fees;
         for (uint i = 0; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
@@ -179,14 +183,25 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         emit CollectFees(fees);
     }
 
+    /**
+        The sender claims all his free available tokens.
+     */
     function claim() external {
         _claim(msg.sender, 0);
     }
 
+    /**
+        The sender claims free available tokens for another wallet. The token receiver is the wallet, not the sender.
+        @param userAddress the address to claim for
+     */
     function claimFor(address userAddress) external {
         _claim(userAddress, 0);
     }
 
+    /**
+        The sender claims all his free available tokens, requests to claim a certain extra amount and is charged a fee.
+        @param extraClaimAmount extra amount
+     */
     function claimWithExtra(uint128 extraClaimAmount) external {
         return _claim(msg.sender, extraClaimAmount);
     }
@@ -201,7 +216,8 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             uint claimedFromBatch1, 
             uint claimedFromBatch2, 
             uint claimedFromLocked,
-            uint cappedFee
+            uint cappedFee,
+            uint feeFromLocked
         ) = calculateClaimedAndFee(userAddress, extraClaimAmount);
   
         user.totalClaimed1 += claimedFromBatch1.toUint128();
@@ -214,7 +230,11 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         totalClaimed += claimAmount.toUint128();
 
         vestingToken.safeTransfer(userAddress, claimAmount);
-        emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount);
+
+        user.totalFeeCollected += feeFromLocked.toUint128();
+        vestingToken.safeTransfer(owner(), feeFromLocked);
+
+        emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount, feeFromLocked);
     }
 
     // =================== VIEW FUNCTIONS  =================== //
@@ -228,7 +248,8 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint claimedFromBatch1, 
         uint claimedFromBatch2, 
         uint claimedFromLocked,
-        uint cappedFee
+        uint cappedFee,
+        uint feeFromLocked
      ) {
         User storage user = users[userAddress];
         uint unlocked = getUnlocked(userAddress);
@@ -250,7 +271,6 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint feeFromBatch2 = claimedFromBatch2 - unlocked2;
 
         claimedFromLocked = claimAmount - claimedFromBatch1 - claimedFromBatch2;
-        uint feeFromLocked;
         if (burnRate < HUNDRED_PERCENT) {
             feeFromLocked = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
         }
@@ -258,6 +278,10 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         cappedFee = feeFromBatch2 + feeFromLocked;
         if (cappedFee > user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount)) {
             cappedFee = user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount);
+        }
+
+        if (feeFromLocked > cappedFee) {
+            feeFromLocked = cappedFee;
         }
     }
 

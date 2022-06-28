@@ -458,6 +458,14 @@ describe("SHO Vesting Smart Contract", function() {
             expect((await contract.users(user1.address)).totalClaimedFromLocked).to.equal(parseUnits(100));
         });
 
+        it("increased user's totalFeeCollected", async() => {
+            expect((await contract.users(user1.address)).totalFeeCollected).to.equal(parseUnits(400));
+        });
+
+        it("the owner received the burned tokens", async() => {
+            expect(await vestingToken.balanceOf(owner.address)).to.equal(parseUnits(400));
+        });
+
         it("increased user's totalFee", async() => {
             expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(414));
         });
