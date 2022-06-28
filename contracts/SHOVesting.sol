@@ -163,7 +163,11 @@ contract SHOVesting is Ownable, ReentrancyGuard {
 
     // =================== EXTERNAL FUNCTIONS  =================== //
     
-     function collectFees(address[] calldata userAddresses) external {
+    /**
+        Sends all collectable fees to the owner. The fees are collected with respect to the vesting schedule.
+        @param userAddresses array of addresses to collect the fees from
+     */
+    function collectFees(address[] calldata userAddresses) external {
         uint fees;
         for (uint i = 0; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
@@ -179,14 +183,25 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         emit CollectFees(fees);
     }
 
+    /**
+        The sender claims all his free available tokens.
+     */
     function claim() external {
         _claim(msg.sender, 0);
     }
 
+    /**
+        The sender claims free available tokens for another wallet. The token receiver is the wallet, not the sender.
+        @param userAddress the address to claim for
+     */
     function claimFor(address userAddress) external {
         _claim(userAddress, 0);
     }
 
+    /**
+        The sender claims all his free available tokens, requests to claim a certain extra amount and is charged a fee.
+        @param extraClaimAmount extra amount
+     */
     function claimWithExtra(uint128 extraClaimAmount) external {
         return _claim(msg.sender, extraClaimAmount);
     }
