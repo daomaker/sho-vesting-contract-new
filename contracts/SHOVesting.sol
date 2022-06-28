@@ -23,7 +23,9 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint128 totalClaimed1;
         uint128 totalClaimed2;
         uint128 totalClaimedFromLocked;
+        uint128 totalFeeCollected;
     }
+    mapping (address => User) public users;
 
     IERC20 public immutable vestingToken;
     uint public immutable startTime;
@@ -35,15 +37,14 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     uint public immutable batch2Delay;
 
     address public manager;
-    uint128 public totalTokens;
-    uint128 public totalClaimed;
-    uint128 public totalFee;
-    uint128 public totalFeeCollected;
     uint40 public lockedClaimableTokensOffset;
     uint16 public burnRate;
     bool public whitelistingAllowed = true;
 
-    mapping (address => User) public users;
+    uint128 public totalTokens;
+    uint128 public totalClaimed;
+    uint128 public totalFee;
+    uint128 public totalFeeCollected;
 
     event Whitelist(address userAddress, uint totalTokens, bool hasBatch2Delay, uint initialFee);
     event Elimination(address userAddress, uint fee, uint eliminatedAt);
@@ -159,20 +160,24 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             emit Elimination(userAddress, fee, block.timestamp);
         }
     }
-    
-    function collectFees(uint128 amount) external nonReentrant onlyManager {
-        uint128 maxCollectable = totalFee - totalFeeCollected;
-        if (amount > maxCollectable) {
-            amount = maxCollectable;
-        }
-        require(amount > 0, "no fees to collect");
-
-        totalFeeCollected += amount;
-        vestingToken.safeTransfer(owner(), amount);
-        emit CollectFees(amount);
-    }
 
     // =================== EXTERNAL FUNCTIONS  =================== //
+    
+     function collectFees(address[] calldata userAddresses) external {
+        uint fees;
+        for (uint i = 0; i < userAddresses.length; i++) {
+            address userAddress = userAddresses[i];
+            User storage user = users[userAddress];
+            uint fee = getVestingSchedule(userAddress, false) - getUnlocked(userAddress) - user.totalClaimed - user.totalFeeCollected;
+            require(fee > 0, "some users dont have any fee to collect");
+            user.totalFeeCollected += fee.toUint128();
+            fees += fee;
+        }
+
+        totalFeeCollected += fees.toUint128();
+        vestingToken.safeTransfer(owner(), fees);
+        emit CollectFees(fees);
+    }
 
     function claim() external {
         _claim(msg.sender, 0);
