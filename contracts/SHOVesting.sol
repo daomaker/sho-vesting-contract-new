@@ -49,7 +49,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     event Whitelist(address userAddress, uint totalTokens, bool hasBatch2Delay, uint initialFee);
     event Elimination(address userAddress, uint fee, uint eliminatedAt);
     event CollectFees(uint amount);
-    event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount);
+    event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount, uint feeFromLocked);
 
     modifier onlyManager() {
         require(msg.sender == manager, "manager only");
@@ -216,7 +216,8 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             uint claimedFromBatch1, 
             uint claimedFromBatch2, 
             uint claimedFromLocked,
-            uint cappedFee
+            uint cappedFee,
+            uint feeFromLocked
         ) = calculateClaimedAndFee(userAddress, extraClaimAmount);
   
         user.totalClaimed1 += claimedFromBatch1.toUint128();
@@ -229,7 +230,11 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         totalClaimed += claimAmount.toUint128();
 
         vestingToken.safeTransfer(userAddress, claimAmount);
-        emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount);
+
+        user.totalFeeCollected += feeFromLocked.toUint128();
+        vestingToken.safeTransfer(owner(), feeFromLocked);
+
+        emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount, feeFromLocked);
     }
 
     // =================== VIEW FUNCTIONS  =================== //
@@ -243,7 +248,8 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint claimedFromBatch1, 
         uint claimedFromBatch2, 
         uint claimedFromLocked,
-        uint cappedFee
+        uint cappedFee,
+        uint feeFromLocked
      ) {
         User storage user = users[userAddress];
         uint unlocked = getUnlocked(userAddress);
@@ -265,7 +271,6 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint feeFromBatch2 = claimedFromBatch2 - unlocked2;
 
         claimedFromLocked = claimAmount - claimedFromBatch1 - claimedFromBatch2;
-        uint feeFromLocked;
         if (burnRate < HUNDRED_PERCENT) {
             feeFromLocked = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
         }
@@ -273,6 +278,10 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         cappedFee = feeFromBatch2 + feeFromLocked;
         if (cappedFee > user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount)) {
             cappedFee = user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount);
+        }
+
+        if (feeFromLocked > cappedFee) {
+            feeFromLocked = cappedFee;
         }
     }
 
