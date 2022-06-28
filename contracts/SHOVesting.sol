@@ -23,6 +23,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint128 totalClaimed1;
         uint128 totalClaimed2;
         uint128 totalClaimedFromLocked;
+        uint128 totalFeeCollected;
     }
     mapping (address => User) public users;
 
@@ -160,16 +161,20 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         }
     }
     
-    function collectFees(uint128 amount) external nonReentrant onlyManager {
-        uint128 maxCollectable = totalFee - totalFeeCollected;
-        if (amount > maxCollectable) {
-            amount = maxCollectable;
+     function collectFees(address[] calldata userAddresses) external onlyManager {
+        uint fees;
+        for (uint i = 0; i < userAddresses.length; i++) {
+            address userAddress = userAddresses[i];
+            User storage user = users[userAddress];
+            uint fee = getVestingSchedule(userAddress, false) - getUnlocked(userAddress) - user.totalClaimed - user.totalFeeCollected;
+            require(fee > 0, "some users dont have any fee to collect");
+            user.totalFeeCollected += fee.toUint128();
+            fees += fee;
         }
-        require(amount > 0, "no fees to collect");
 
-        totalFeeCollected += amount;
-        vestingToken.safeTransfer(owner(), amount);
-        emit CollectFees(amount);
+        totalFeeCollected += fees.toUint128();
+        vestingToken.safeTransfer(owner(), fees);
+        emit CollectFees(fees);
     }
 
     // =================== EXTERNAL FUNCTIONS  =================== //
