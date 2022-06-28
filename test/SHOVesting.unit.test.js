@@ -222,7 +222,7 @@ describe("SHO Vesting Smart Contract", function() {
             expect((await contract.users(user2.address)).totalFee).to.equal(parseUnits(100));
         });
 
-        it("reverts when whitelisting already whitelisted user", async() => {
+        it("reverts if whitelisting already whitelisted user", async() => {
             await expect(contract.connect(owner).whitelist(
                 [user1.address],
                 [parseUnits(3000)],
@@ -307,34 +307,35 @@ describe("SHO Vesting Smart Contract", function() {
             await init();
             await time.increase(10);
             await setUserStats(user1, {
+                hasBatch2Delay: true,
                 totalTokens: parseUnits(5000),
             });
-            await contract.connect(manager).eliminate([user1.address]);
+            await contract.connect(user1).claimWithExtra(parseUnits(200));
+
+            await setUserStats(user2, {
+                hasBatch2Delay: true,
+                totalTokens: parseUnits(5000),
+            });
+            await contract.connect(user2).claimWithExtra(parseUnits(500));
         });
 
-        it("reverts if the sender is not the manager", async() => {
-            await expect(contract.connect(user1).collectFees(parseUnits(1))).to.be.revertedWith("manager only");
+        it("some fees are collected the same unlock", async() => {
+            await contract.connect(manager).collectFees([user1.address, user2.address]);
+            expect(await vestingToken.balanceOf(owner.address)).to.equal(parseUnits(400));
         });
-
-        it("the manager collects some fees", async() => {
-            await contract.connect(manager).collectFees(parseUnits(1000));
-        });
-
-        it("the owner receives the tokens", async() => {
-            expect(await vestingToken.balanceOf(owner.address)).to.equal(parseUnits(1000));
-        });
-
+    
         it("increased totalFeeCollected", async() => {
-            expect(await contract.totalFeeCollected()).to.equal(parseUnits(1000));
-        });
-
-        it("caps at max claimable amount", async() => {
-            await contract.connect(manager).collectFees(parseUnits(5000));
-            expect(await contract.totalFeeCollected()).to.equal(parseUnits(4000));
+            expect(await contract.totalFeeCollected()).to.equal(parseUnits(400));
         });
 
         it("reverts if no fees to collect", async() => {
-            await expect(contract.connect(manager).collectFees(parseUnits(5000))).to.be.revertedWith("no fees to collect");
+            await expect(contract.connect(manager).collectFees([user1.address, user2.address])).to.be.revertedWith("");
+        });
+
+        it("some fees are collected in future unlocks", async() => {
+            await time.increase(settings.linearVestingOffset + settings.linearVestingPeriod * 20);
+            await contract.connect(user1).collectFees([user2.address]);
+            expect(await vestingToken.balanceOf(owner.address)).to.equal(parseUnits(700));
         });
     });
 
@@ -349,7 +350,7 @@ describe("SHO Vesting Smart Contract", function() {
             });
         });
 
-        it("reverts when 0 claimable amount", async() => {
+        it("reverts if 0 claimable amount", async() => {
             await expect(contract.connect(user1).claim()).to.be.revertedWith("nothing to claim");
         });
 
@@ -428,7 +429,7 @@ describe("SHO Vesting Smart Contract", function() {
             });
         });
 
-        it("reverts when requested claim amount is less than max claimable amount", async() => {
+        it("reverts if requested claim amount is less than max claimable amount", async() => {
             await time.increase(settings.linearVestingOffset + 10);
             await expect(contract.connect(user1).claimWithExtra(parseUnits(1000))).to.be.revertedWith("requested claim amount > max claimable");
         });

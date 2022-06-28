@@ -51,7 +51,8 @@ contract SHOVestingMock is SHOVesting {
             totalClaimed,
             totalClaimed1,
             totalClaimed2,
-            totalClaimedFromLocked
+            totalClaimedFromLocked,
+            0
         );
     }
 

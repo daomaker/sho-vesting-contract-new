@@ -160,8 +160,10 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             emit Elimination(userAddress, fee, block.timestamp);
         }
     }
+
+    // =================== EXTERNAL FUNCTIONS  =================== //
     
-     function collectFees(address[] calldata userAddresses) external onlyManager {
+     function collectFees(address[] calldata userAddresses) external {
         uint fees;
         for (uint i = 0; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
@@ -176,8 +178,6 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         vestingToken.safeTransfer(owner(), fees);
         emit CollectFees(fees);
     }
-
-    // =================== EXTERNAL FUNCTIONS  =================== //
 
     function claim() external {
         _claim(msg.sender, 0);
