@@ -170,7 +170,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         for (uint i = 0; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
             User storage user = users[userAddress];
-            uint fee = getVestingSchedule(userAddress, false) - getUnlocked(userAddress) - user.totalClaimed - user.totalFeeCollected;
+            uint fee = getVestingSchedule(userAddress, false) - getUnlocked(userAddress) - user.totalClaimed - user.totalBurned - user.totalFeeCollected;
             require(fee > 0, "some users dont have any fee to collect");
             user.totalFeeCollected += fee.toUint128();
             fees += fee;
