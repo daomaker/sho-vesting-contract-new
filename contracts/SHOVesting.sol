@@ -307,7 +307,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         User storage user = users[userAddress];
         uint vestingSchedule = getVestingSchedule(userAddress, false);
         if (user.eliminatedAt > 0) {
-            vestingSchedule = user.totalTokens;
+            vestingSchedule = user.totalTokens - user.totalClaimedFromLocked - user.totalBurned;
         }
 
         uint totalSpentWithoutBurn = user.totalClaimedFromUnlocked + user.totalFee;
