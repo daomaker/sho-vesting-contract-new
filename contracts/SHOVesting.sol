@@ -278,7 +278,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             burned = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
         }
 
-        cappedFee = claimedFromBatch2;
+        cappedFee = claimedFromBatch2 - unlocked2;
         if (cappedFee > user.totalTokens - (user.totalFee + user.totalBurned + user.totalClaimed + claimAmount)) {
             cappedFee = user.totalTokens - (user.totalFee + user.totalBurned + user.totalClaimed + claimAmount);
         }
