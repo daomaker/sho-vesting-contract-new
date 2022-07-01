@@ -66,10 +66,11 @@ describe("SHO Vesting Smart Contract", function() {
             stats.eliminatedAt ?? 0,
             stats.totalTokens ?? parseUnits(5000),
             stats.totalFee ?? parseUnits(0),
+            stats.totalBurned ?? parseUnits(0),
             stats.totalClaimed ?? parseUnits(0),
             stats.totalClaimed1 ?? 0,
             stats.totalClaimed2 ?? 0,
-            stats.totalClaimedFromLocked ?? 0,
+            stats.totalClaimedFromLocked ?? 0
         );
     };
 
@@ -266,8 +267,11 @@ describe("SHO Vesting Smart Contract", function() {
             });
             await setUserStats(user1, {
                 totalTokens: parseUnits(5000),
-                totalFee: parseUnits(200),
-                totalClaimed: parseUnits(1050)
+                totalClaimed: parseUnits(1300),
+                totalClaimed1: parseUnits(360),
+                totalClaimed2: parseUnits(840),
+                totalFee: parseUnits(140),
+                totalBurned: parseUnits(400),
             });
         });
 
@@ -276,11 +280,12 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("reverts if the sender is not the manager", async() => {
-            await time.increase(119 * 86400 + 10);
+            await time.increase(10);
             await expect(contract.connect(user1).eliminate([])).to.be.revertedWith("manager only");
         });
 
         it("eliminates", async() => {
+            await time.increase(settings.linearVestingOffset + settings.linearVestingPeriod * 9);
             await contract.connect(manager).eliminate([user1.address]);
         });
 
@@ -289,11 +294,11 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("increased user's totalFee", async() => {
-            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(3600));
+            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(3300));
         });
 
         it("increased global totalFee", async() => {
-            expect(await contract.totalFee()).to.equal(parseUnits(3400));
+            expect(await contract.totalFee()).to.equal(parseUnits(3160));
         });
 
         it("sets user's elimatedAt correctly", async() => {
@@ -319,7 +324,7 @@ describe("SHO Vesting Smart Contract", function() {
             await contract.connect(user2).claimWithExtra(parseUnits(500));
         });
 
-        it("some fees are collected the same unlock", async() => {
+        it("some fees are collected", async() => {
             await contract.connect(manager).collectFees([user1.address, user2.address]);
             expect(await vestingToken.balanceOf(owner.address)).to.equal(parseUnits(400));
         });
@@ -429,7 +434,7 @@ describe("SHO Vesting Smart Contract", function() {
             });
         });
 
-        it("reverts if requested claim amount is less than max claimable amount", async() => {
+        it("reverts if requested claim amount is greater than max claimable amount", async() => {
             await time.increase(settings.linearVestingOffset + 10);
             await expect(contract.connect(user1).claimWithExtra(parseUnits(1000))).to.be.revertedWith("requested claim amount > max claimable");
         });
@@ -458,22 +463,18 @@ describe("SHO Vesting Smart Contract", function() {
             expect((await contract.users(user1.address)).totalClaimedFromLocked).to.equal(parseUnits(100));
         });
 
-        it("increased user's totalFeeCollected", async() => {
-            expect((await contract.users(user1.address)).totalFeeCollected).to.equal(parseUnits(400));
-        });
-
         it("the owner received the burned tokens", async() => {
             expect(await vestingToken.balanceOf(owner.address)).to.equal(parseUnits(400));
         });
 
-        it("increased user's totalFee", async() => {
-            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(414));
+        it("increased user's totalBurned", async() => {
+            expect((await contract.users(user1.address)).totalBurned).to.equal(parseUnits(400));
         });
 
-        it("caps fee at user's totalTokens - (claimedFromBatch1 + claimedFromBatch2 + claimedFromLocked)", async() => {
+        it("the fee is capped", async() => {
             await time.increase(settings.linearVestingPeriod * settings.linearUnlocksCount);
-            await contract.connect(user1).claimWithExtra(parseUnits(1000));
-            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(660));
+            await contract.connect(user1).claimWithExtra(parseUnits(800));
+            expect((await contract.users(user1.address)).totalFee).to.equal(parseUnits(110));
         });
 
         describe("when burnRate is 100% ", async() => {
@@ -509,7 +510,7 @@ describe("SHO Vesting Smart Contract", function() {
                 startTime: Number(await time.latest()) + 10
             });
             await setUserStats(user1, {
-                totalTokens: parseUnits(5000),
+                totalTokens: parseUnits(5000)
             });
         });
 
@@ -535,31 +536,46 @@ describe("SHO Vesting Smart Contract", function() {
         it("forBatch2 true", async() => {
             expect(await contract.getVestingSchedule(user1.address, true)).to.equal(parseUnits(5000 - 20 * 89));
         });
+
+        it("when vestingSchedule is greater than maxAllowed", async() => {
+            await setUserStats(user1, {
+                totalTokens: parseUnits(5000),
+                totalClaimedFromLocked: parseUnits(100),
+                totalBurned: parseUnits(400)
+            });
+            expect(await contract.getVestingSchedule(user1.address, false)).to.equal(parseUnits(4500));
+        });
     });
 
     describe("getUnlocked", async() => {
         before(async() => {
             await init();
             await setUserStats(user1, {
+                hasBatch2Delay: true,
                 totalTokens: parseUnits(5000),
-                totalFee: parseUnits(200),
-                totalClaimed: parseUnits(1050)
+                totalFee: parseUnits(140),
+                totalClaimed: parseUnits(1300),
+                totalClaimed1: parseUnits(360),
+                totalClaimed2: parseUnits(840),
+                totalClaimedFromLocked: parseUnits(100),
+                totalBurned: parseUnits(400)
             });
         });
 
-        it("when user's vestingSchedule is less than totalClaimed + totalFee", async() => {
+        it("when user's vestingSchedule is less than totalClaimed and totalFee", async() => {
+            await time.increase(settings.linearVestingOffset + settings.linearVestingPeriod * 10);
             expect(await contract.getUnlocked(user1.address)).to.equal(0);
         });
 
         it("when not eliminated", async() => {
-            await time.increase(settings.linearVestingOffset + 100 * settings.linearVestingPeriod);
-            expect(await contract.getUnlocked(user1.address)).to.equal(parseUnits(1770));
+            await time.increase(settings.linearVestingPeriod * 100);
+            expect(await contract.getUnlocked(user1.address)).to.equal(parseUnits(1880));
         });
 
         it("when eliminated", async() => {
             await contract.connect(manager).eliminate([user1.address]);
-            await time.increase(200 * settings.linearVestingPeriod);
-            expect(await contract.getUnlocked(user1.address)).to.equal(parseUnits(1770)); 
+            await time.increase(settings.linearVestingPeriod);
+            expect(await contract.getUnlocked(user1.address)).to.equal(parseUnits(1880)); 
         });
     });
 
@@ -569,10 +585,12 @@ describe("SHO Vesting Smart Contract", function() {
             await setUserStats(user1, {
                 hasBatch2Delay: true,
                 totalTokens: parseUnits(5000),
-                totalFee: parseUnits(200),
-                totalClaimed: parseUnits(500),
-                totalClaimed1: parseUnits(300),
-                totalClaimed2: parseUnits(200),
+                totalFee: parseUnits(140),
+                totalClaimed: parseUnits(1300),
+                totalClaimed1: parseUnits(360),
+                totalClaimed2: parseUnits(840),
+                totalClaimedFromLocked: parseUnits(100),
+                totalBurned: parseUnits(400)
             });
         });
 
@@ -581,8 +599,8 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("after lockedClaimableTokensOffset", async() => {
-            await time.increase(settings.lockedClaimableTokensOffset);
-            expect(await contract.getLocked(user1.address)).to.equal(parseUnits(804));
+            await time.increase(settings.lockedClaimableTokensOffset + settings.linearVestingPeriod * 10);
+            expect(await contract.getLocked(user1.address)).to.equal(parseUnits(632));
         });
 
         it("when totalClaimed and totalFee is greater than totalTokens", async() => {
@@ -601,23 +619,22 @@ describe("SHO Vesting Smart Contract", function() {
             await setUserStats(user1, {
                 hasBatch2Delay: true,
                 totalTokens: parseUnits(5000),
-                totalFee: parseUnits(582),
-                totalClaimed: parseUnits(1360),
-                totalClaimed1: parseUnits(378),
-                totalClaimed2: parseUnits(882),
-                totalClaimedFromLocked: parseUnits(100)
+                totalFee: parseUnits(500),
+                totalClaimed: parseUnits(800),
+                totalClaimed1: parseUnits(300),
+                totalClaimed2: parseUnits(500),
             });
-            await time.increase(settings.linearVestingOffset + settings.linearVestingPeriod * 100);
         });
 
         it("when not eliminated", async() => {
-            expect(await contract.getUnlocked1(user1.address)).to.equal(parseUnits(323.4));
+            await time.increase(settings.linearVestingOffset + settings.linearVestingPeriod * 100);
+            expect(await contract.getUnlocked1(user1.address)).to.equal(parseUnits(456));
         });
 
         it("when eliminated", async() => {
             await contract.connect(manager).eliminate([user1.address]);
             await time.increase(settings.linearVestingPeriod);
-            expect(await contract.getUnlocked1(user1.address)).to.equal(parseUnits(323.4));
+            expect(await contract.getUnlocked1(user1.address)).to.equal(parseUnits(516));
         });
 
         it("when user's vestingSchedule is less than totalClaimed + totalFee", async() => {
@@ -638,28 +655,27 @@ describe("SHO Vesting Smart Contract", function() {
             await setUserStats(user1, {
                 hasBatch2Delay: true,
                 totalTokens: parseUnits(5000),
-                totalFee: parseUnits(582),
-                totalClaimed: parseUnits(1360),
-                totalClaimed1: parseUnits(378),
-                totalClaimed2: parseUnits(882),
-                totalClaimedFromLocked: parseUnits(100)
+                totalFee: parseUnits(500),
+                totalClaimed: parseUnits(800),
+                totalClaimed1: parseUnits(300),
+                totalClaimed2: parseUnits(500),
             });
-            await time.increase(settings.linearVestingOffset + settings.linearVestingPeriod * 100);
         });
 
         it("when not eliminated and has 0 available from batch 2", async() => {
+            await time.increase(settings.linearVestingOffset + settings.linearVestingPeriod * 10);
             expect(await contract.getUnlocked2(user1.address)).to.equal(0);
         });
 
-        it("when not eliminated and has 0 available from batch 2", async() => {
-            await time.increase(settings.linearVestingPeriod * 50);
-            expect(await contract.getUnlocked2(user1.address)).to.equal(parseUnits(194.6));
+        it("when not eliminated and has some amount available from batch 2", async() => {
+            await time.increase(settings.linearVestingPeriod * 100);
+            expect(await contract.getUnlocked2(user1.address)).to.equal(parseUnits(144));
         });
 
         it("when eliminated", async() => {
             await contract.connect(manager).eliminate([user1.address]);
             await time.increase(settings.linearVestingPeriod);
-            expect(await contract.getUnlocked2(user1.address)).to.equal(parseUnits(1454.6));
+            expect(await contract.getUnlocked2(user1.address)).to.equal(parseUnits(1344));
         });
 
         it("when user's vestingSchedule is less than totalClaimed + totalFee", async() => {
