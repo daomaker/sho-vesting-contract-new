@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "hardhat/console.sol";
 
 contract SHOVesting is Ownable, ReentrancyGuard {
     using SafeCast for uint256;
@@ -19,6 +20,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint40 eliminatedAt;
         uint128 totalTokens;
         uint128 totalFee;
+        uint128 totalBurned;
         uint128 totalClaimed;
         uint128 totalClaimed1;
         uint128 totalClaimed2;
@@ -44,12 +46,13 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     uint128 public totalTokens;
     uint128 public totalClaimed;
     uint128 public totalFee;
+    uint128 public totalBurned;
     uint128 public totalFeeCollected;
 
     event Whitelist(address userAddress, uint totalTokens, bool hasBatch2Delay, uint initialFee);
     event Elimination(address userAddress, uint fee, uint eliminatedAt);
     event CollectFees(uint amount);
-    event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount, uint feeFromLocked);
+    event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount, uint burned);
 
     modifier onlyManager() {
         require(msg.sender == manager, "manager only");
@@ -149,7 +152,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             User storage user = users[userAddress];
             require(user.eliminatedAt == 0, "some users are already eliminated");
 
-            uint total = user.totalClaimed + user.totalFee + getUnlocked(userAddress);
+            uint total = user.totalClaimed + user.totalFee + user.totalBurned + getUnlocked(userAddress);
             uint fee;
             if (user.totalTokens > total) {
                 fee = user.totalTokens - total;
@@ -172,8 +175,11 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         for (uint i = 0; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
             User storage user = users[userAddress];
-            uint fee = getVestingSchedule(userAddress, false) - getUnlocked(userAddress) - user.totalClaimed - user.totalFeeCollected;
+
+            uint totalClaimedFromUnlocked = user.totalClaimed1 + user.totalClaimed2;
+            uint fee = getVestingSchedule(userAddress, false) - getUnlocked(userAddress) - totalClaimedFromUnlocked - user.totalFeeCollected;
             require(fee > 0, "some users dont have any fee to collect");
+            
             user.totalFeeCollected += fee.toUint128();
             fees += fee;
         }
@@ -217,7 +223,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             uint claimedFromBatch2, 
             uint claimedFromLocked,
             uint cappedFee,
-            uint feeFromLocked
+            uint burned
         ) = calculateClaimedAndFee(userAddress, extraClaimAmount);
   
         user.totalClaimed1 += claimedFromBatch1.toUint128();
@@ -225,16 +231,16 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         user.totalClaimedFromLocked += claimedFromLocked.toUint128();
         user.totalClaimed += (claimedFromBatch1 + claimedFromBatch2 + claimedFromLocked).toUint128();
         user.totalFee += cappedFee.toUint128();
+        user.totalBurned += burned.toUint128();
         
         totalFee += cappedFee.toUint128();
+        totalBurned += burned.toUint128();
         totalClaimed += claimAmount.toUint128();
 
         vestingToken.safeTransfer(userAddress, claimAmount);
+        vestingToken.safeTransfer(owner(), burned);  // this will change
 
-        user.totalFeeCollected += feeFromLocked.toUint128();
-        vestingToken.safeTransfer(owner(), feeFromLocked);
-
-        emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount, feeFromLocked);
+        emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount, burned);
     }
 
     // =================== VIEW FUNCTIONS  =================== //
@@ -249,7 +255,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint claimedFromBatch2, 
         uint claimedFromLocked,
         uint cappedFee,
-        uint feeFromLocked
+        uint burned
      ) {
         User storage user = users[userAddress];
         uint unlocked = getUnlocked(userAddress);
@@ -268,24 +274,19 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         if (claimedFromBatch2 > unlocked - unlocked1) {
             claimedFromBatch2 = unlocked - unlocked1;
         }
-        uint feeFromBatch2 = claimedFromBatch2 - unlocked2;
 
         claimedFromLocked = claimAmount - claimedFromBatch1 - claimedFromBatch2;
         if (burnRate < HUNDRED_PERCENT) {
-            feeFromLocked = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
+            burned = claimedFromLocked * burnRate / (HUNDRED_PERCENT - burnRate);
         }
 
-        cappedFee = feeFromBatch2 + feeFromLocked;
-        if (cappedFee > user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount)) {
-            cappedFee = user.totalTokens - (user.totalFee + user.totalClaimed + claimAmount);
-        }
-
-        if (feeFromLocked > cappedFee) {
-            feeFromLocked = cappedFee;
+        cappedFee = claimedFromBatch2 - unlocked2;
+        if (cappedFee > user.totalTokens - (user.totalFee + user.totalBurned + user.totalClaimed + claimAmount)) {
+            cappedFee = user.totalTokens - (user.totalFee + user.totalBurned + user.totalClaimed + claimAmount);
         }
     }
 
-    function getVestingSchedule(address userAddress, bool forBatch2) public view returns (uint) {
+    function getVestingSchedule(address userAddress, bool forBatch2) public view returns (uint vestingSchedule) {
         User storage user = users[userAddress];
         uint vestedTime = _getVestedTime(forBatch2);
         if (vestedTime == 0) {
@@ -296,19 +297,23 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint linearUnlocksTokens = user.totalTokens - firstUnlockTokens;
         uint linearUnlocksPassed = _getLinearUnlocksPassed(forBatch2);
 
-        return firstUnlockTokens + linearUnlocksTokens * linearUnlocksPassed / linearUnlocksCount;
+        vestingSchedule = firstUnlockTokens + linearUnlocksTokens * linearUnlocksPassed / linearUnlocksCount;
+        uint maxAllowed = user.totalTokens - user.totalClaimedFromLocked - user.totalBurned;
+        if (vestingSchedule > maxAllowed) {
+            vestingSchedule = maxAllowed;
+        }
     }
 
     function getUnlocked(address userAddress) public view returns (uint) {
         User storage user = users[userAddress];
         uint vestingSchedule = getVestingSchedule(userAddress, false);
         if (user.eliminatedAt > 0) {
-            vestingSchedule = user.totalTokens;
+            vestingSchedule = user.totalTokens - user.totalClaimedFromLocked - user.totalBurned;
         }
 
-        uint totalClaimedAndFee = user.totalClaimed + user.totalFee;
-        if (vestingSchedule > totalClaimedAndFee) {
-            return vestingSchedule - totalClaimedAndFee;
+        uint totalSpentWithoutBurn = user.totalClaimed1 + user.totalClaimed2 + user.totalFee;
+        if (vestingSchedule > totalSpentWithoutBurn) {
+            return vestingSchedule - totalSpentWithoutBurn;
         }
     }
 
@@ -319,13 +324,13 @@ contract SHOVesting is Ownable, ReentrancyGuard {
             return 0;
         }
         
-        uint totalClaimedAndFee = user.totalClaimed + user.totalFee;
+        uint totalSpent = user.totalClaimed + user.totalFee + user.totalBurned;
         uint unlocked = getUnlocked(userAddress);
         uint unlocked1 = getUnlocked1(userAddress);
         uint unlocked2 = getUnlocked2(userAddress);
 
-        if (user.totalTokens + unlocked1 + unlocked2 > totalClaimedAndFee + unlocked * 2) {
-            uint locked = user.totalTokens + unlocked1 + unlocked2 - (totalClaimedAndFee + unlocked * 2);
+        if (user.totalTokens + unlocked1 + unlocked2 > totalSpent + unlocked * 2) {
+            uint locked = user.totalTokens + unlocked1 + unlocked2 - (totalSpent + unlocked * 2);
             return _applyPercentage(locked, HUNDRED_PERCENT - burnRate);
         }
     }
@@ -337,7 +342,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         } 
             
         uint vestingSchedule = _applyPercentage(getVestingSchedule(userAddress, false), batch1Percentage);
-        uint totalClaimed1AndFee = user.totalClaimed1 + _applyPercentage(user.totalFee, batch1Percentage) + _applyPercentage(user.totalClaimedFromLocked, batch1Percentage);
+        uint totalClaimed1AndFee = user.totalClaimed1 + _applyPercentage(user.totalFee, batch1Percentage);
         if (vestingSchedule > totalClaimed1AndFee) {
             return vestingSchedule - totalClaimed1AndFee;
         }
@@ -351,7 +356,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         }
 
         uint vestingSchedule = _applyPercentage(getVestingSchedule(userAddress, user.hasBatch2Delay), batch2Percentage);
-        uint totalClaimed2AndFee = user.totalClaimed2 + _applyPercentage(user.totalFee, batch2Percentage) + _applyPercentage(user.totalClaimedFromLocked, batch2Percentage);
+        uint totalClaimed2AndFee = user.totalClaimed2 + _applyPercentage(user.totalFee, batch2Percentage);
         if (vestingSchedule > totalClaimed2AndFee) {
             return vestingSchedule - totalClaimed2AndFee;
         }

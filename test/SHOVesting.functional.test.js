@@ -69,12 +69,13 @@ describe("SHO Vesting Smart Contract", function() {
             stats.eliminatedAt ?? 0,
             stats.totalTokens ?? parseUnits(5000),
             stats.totalFee ?? parseUnits(0),
+            stats.totalBurned ?? parseUnits(0),
             stats.totalClaimed ?? parseUnits(0),
             stats.totalClaimed1 ?? 0,
             stats.totalClaimed2 ?? 0,
-            stats.totalClaimedFromLocked ?? 0,
+            stats.totalClaimedFromLocked ?? 0
         );
-    }
+    };
 
     const collectFees = async(user, expectedFees) => {
         await contract.collectFees([user.address]);
@@ -100,12 +101,14 @@ describe("SHO Vesting Smart Contract", function() {
         user,
         extraClaimAmount,
         totalClaimed,
-        totalFee
+        totalFee,
+        totalBurned
     ) => {
         await contract.connect(user).claimWithExtra(parseUnits(extraClaimAmount));
         const userStats = await contract.users(user.address);
         expect(userStats.totalClaimed).to.closeTo(parseUnits(totalClaimed), getPrecisionLoss());
         expect(userStats.totalFee).to.closeTo(parseUnits(totalFee), getPrecisionLoss());
+        expect(userStats.totalBurned).to.closeTo(parseUnits(totalBurned), getPrecisionLoss());
     }
 
     describe("TC 1 - daily vesting without fee", async() => {
@@ -135,7 +138,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("claim", async() => {
-            await claim(user1, 0, 1426, 0);
+            await claim(user1, 0, 1426, 0, 0);
             await verifyReturnValues(user1, 2420, 317, 994, 0, 0);
         });
         
@@ -145,7 +148,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("claim", async() => {
-            await claim(user1, 0, 1426 + 1134, 0);
+            await claim(user1, 0, 1426 + 1134, 0, 0);
             await verifyReturnValues(user1, 3820, 0, 1260, 0, 0);
         });
 
@@ -155,7 +158,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("claim", async() => {
-            await claim(user1, 1106, 1426 + 1134 + 2440, 0);
+            await claim(user1, 1106, 1426 + 1134 + 2440, 0, 0);
             await verifyReturnValues(user1, 5000, 0, 0, 0, 0);
         });
     });
@@ -181,8 +184,8 @@ describe("SHO Vesting Smart Contract", function() {
             await verifyReturnValues(user1, 2420, 317, 2420, 726, 700);
         });
 
-        it("claim", async() => {
-            await claim(user1, 994, 2420, 994);
+        it("claim without locked", async() => {
+            await claim(user1, 994, 2420, 994, 0);
             await verifyReturnValues(user1, 2420, 317, 0, 0, 0);
         });
 
@@ -195,19 +198,19 @@ describe("SHO Vesting Smart Contract", function() {
             await collectFees(user1, 994);
         });
 
-        it("claim", async() => {
-            await claim(user1, 384, 2925, 1678);
+        it("claim with locked", async() => {
+            await claim(user1, 384, 2925, 1278, 400);
             await verifyReturnValues(user1, 3820, 79, 0, 0, 0);
         });
 
         it("verify return values", async() => {
             await time.increase(linearVestingPeriod * 70);
-            await verifyReturnValues(user1, 5000, 0, 396, 119, 0);
+            await verifyReturnValues(user1, 4500, 0, 396, 119, 0);
         });
 
         it("claim", async() => {
-            await claim(user1, 277, 3322, 1678);
-            await verifyReturnValues(user1, 5000, 0, 0, 0, 0);
+            await claim(user1, 277, 3322, 1278, 400);
+            await verifyReturnValues(user1, 4500, 0, 0, 0, 0);
         });
         
         it("collect fees", async() => {
@@ -242,7 +245,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("claim", async() => {
-            await claim(user1, 0, 2420, 0);
+            await claim(user1, 0, 2420, 0, 0);
             await verifyReturnValues(user1, 2420, 516, 0, 0, 0);
         });
 
@@ -270,7 +273,7 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("claim", async() => {
             await time.increase(linearVestingOffset + linearVestingPeriod * 70);
-            await claim(user1, 0, 2420, 0);
+            await claim(user1, 0, 2420, 0, 0);
             await verifyReturnValues(user1, 2420, 516, 0, 0, 0);
         });
 
@@ -281,7 +284,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("claim", async() => {
-            await claim(user1, 0, 2420 + 1400, 1180);
+            await claim(user1, 0, 2420 + 1400, 1180, 0);
             await verifyReturnValues(user1, 3820, 0, 0, 0, 0);
         });
 
@@ -324,7 +327,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("claim", async() => {
-            await claim(user1, 100, 400, 100);
+            await claim(user1, 100, 400, 100, 0);
             await verifyReturnValues(user1, 1000, 700, 500, 0, 0);
         });
 
@@ -334,8 +337,55 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("claim", async() => {
-            await claim(user1, 1340, 2690, 2310);
+            await claim(user1, 1340, 2690, 1150, 1160);
             await verifyReturnValues(user1, 2500, 0, 0, 0, 0);
+        });
+    });
+
+    describe("TC 6 - collect fees", async() => {
+        const linearVestingOffset = 86400 * 90;
+        const linearVestingPeriod = 86400;
+
+        before(async() => {
+            await init({
+                linearVestingOffset,
+                linearVestingPeriod
+            });
+
+            await setUserStats(user1, {
+                hasBatch2Delay: true,
+                totalTokens: parseUnits(5000)
+            });
+        });
+
+        it("claim with fee and burn", async() => {
+            await time.increase(linearVestingOffset + linearVestingPeriod * 70);
+            await claim(user1, 1094, 2520, 994, 400);
+        });
+
+        it("collect fees", async() => {
+            await time.increase(linearVestingPeriod);
+            await collectFees(user1, 420);
+        });
+
+        it("collect fees", async() => {
+            await time.increase(linearVestingPeriod);
+            await collectFees(user1, 440);
+        });
+
+        it("claim", async() => {
+            await time.increase(linearVestingPeriod * 68);
+            await claim(user1, 363, 3005, 1278, 716);
+        });
+
+        it("collect fees", async() => {
+            await time.increase(linearVestingPeriod);
+            await collectFees(user1, 1730);
+        });
+
+        it("collect fees", async() => {
+            await time.increase(linearVestingPeriod * 50);
+            await collectFees(user1, 1994);
         });
     });
 });
