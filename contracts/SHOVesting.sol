@@ -37,8 +37,8 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     uint public immutable linearUnlocksCount;
     uint public immutable batch1Percentage;
     uint public immutable batch2Delay;
-
-    address public manager;
+    
+    address[] public feeCollectors;
     uint40 public lockedClaimableTokensOffset;
     uint16 public burnRate;
     bool public whitelistingAllowed = true;
@@ -54,14 +54,8 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     event CollectFees(uint amount);
     event Claim(address userAddress, uint claimAmount, uint cappedFee, uint baseClaimAmount, uint burned);
 
-    modifier onlyManager() {
-        require(msg.sender == manager, "manager only");
-        _;
-    }
-
     constructor(
         IERC20 _vestingToken,
-        address _manager,
         uint _startTime,
         uint _firstUnlockPercentage,
         uint _linearVestingOffset,
@@ -70,10 +64,11 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         uint _batch1Percentage,
         uint _batch2Delay,
         uint40 _lockedClaimableTokensOffset,
-        uint16 _burnRate
+        uint16 _burnRate,
+        address[] memory _feeCollectors
     ) {
         require(address(_vestingToken) != address(0));
-        require(_manager != address(0));
+        require(_feeCollectors.length == 3);
         require(_firstUnlockPercentage <= HUNDRED_PERCENT);
         require(_linearVestingPeriod > 0);
         require(_linearUnlocksCount > 0);
@@ -81,7 +76,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         require(_burnRate >= MIN_BURN_RATE && _burnRate <= HUNDRED_PERCENT);
 
         vestingToken = _vestingToken;
-        manager = _manager;
+        feeCollectors = _feeCollectors;
         startTime = _startTime;
         firstUnlockPercentage = _firstUnlockPercentage;
         linearVestingOffset = _linearVestingOffset;
@@ -93,13 +88,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         burnRate = _burnRate;
     }
 
-    // =================== RISTRICTED ASCCESS FUNCTIONS  =================== //
-
-    function setManager(address _manager) external {
-        require(msg.sender == owner() || msg.sender == manager, "manager or owner only");
-        require(_manager != address(0));
-        manager = _manager;
-    }
+    // =================== OWNER FUNCTIONS  =================== //
 
     function setBurnRate(uint16 _burnRate) external onlyOwner {
         require(_burnRate >= MIN_BURN_RATE && _burnRate <= HUNDRED_PERCENT);
@@ -108,6 +97,19 @@ contract SHOVesting is Ownable, ReentrancyGuard {
 
     function setLockedClaimableTokensOffset(uint40 _lockedClaimableTokensOffset) external onlyOwner {
         lockedClaimableTokensOffset = _lockedClaimableTokensOffset;
+    }
+
+    /**
+        @dev The fee receiver is the first address in the feeCollectors array. This function switches between the first and the second.
+        @dev The third is reserved for receiving burned tokens and can't be switched.
+     */
+    function switchFeeCollectors() external onlyOwner {
+        users[feeCollectors[1]] = users[feeCollectors[0]];
+        delete users[feeCollectors[0]];
+
+        address newMainFeeCollector = feeCollectors[1];
+        feeCollectors[1] = feeCollectors[0];
+        feeCollectors[0] = newMainFeeCollector;
     }
     
     function whitelist(
@@ -144,7 +146,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         }
     }
 
-    function eliminate(address[] calldata userAddresses) external onlyManager {
+    function eliminate(address[] calldata userAddresses) external onlyOwner {
         require(_getVestedTime(false) > 0, "eliminating before start");
         
         for (uint i = 0; i < userAddresses.length; i++) {
@@ -167,7 +169,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
     // =================== EXTERNAL FUNCTIONS  =================== //
     
     /**
-        Sends all collectable fees to the owner. The fees are collected with respect to the vesting schedule.
+        Sends all collectable fees to the active fee collector. The fees are collected with respect to the vesting schedule.
         @param userAddresses array of addresses to collect the fees from
      */
     function collectFees(address[] calldata userAddresses) external {
@@ -185,7 +187,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         }
 
         totalFeeCollected += fees.toUint128();
-        vestingToken.safeTransfer(owner(), fees);
+        vestingToken.safeTransfer(feeCollectors[0], fees);
         emit CollectFees(fees);
     }
 
@@ -238,7 +240,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         totalClaimed += claimAmount.toUint128();
 
         vestingToken.safeTransfer(userAddress, claimAmount);
-        vestingToken.safeTransfer(owner(), burned);  // this will change
+        vestingToken.safeTransfer(feeCollectors[2], burned);
 
         emit Claim(userAddress, claimAmount, cappedFee, baseClaimAmount, burned);
     }

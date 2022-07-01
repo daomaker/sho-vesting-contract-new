@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO Vesting Smart Contract", function() {
-    let owner, manager, user1, user2, user3, contract, vestingToken, vestingTokenDecimals, settings;
+    let owner, user1, user2, user3, contract, vestingToken, vestingTokenDecimals, settings;
     
     const parseUnits = (value, decimals = vestingTokenDecimals) => {
         return ethers.utils.parseUnits(value.toString(), decimals);
@@ -25,7 +25,7 @@ describe("SHO Vesting Smart Contract", function() {
     }
 
     const init = async(_settings = {}) => {
-        [owner, manager, user1, user2, user3] = await ethers.getSigners();
+        [owner, feeCollector1, feeCollector2, burnWallet, user1, user2, user3] = await ethers.getSigners();
 
         settings = {
             startTime: _settings.startTime ?? Number(await time.latest()),
@@ -47,7 +47,6 @@ describe("SHO Vesting Smart Contract", function() {
         const Contract = await ethers.getContractFactory("SHOVestingMock");
         contract = await Contract.deploy(
             vestingToken.address,
-            manager.address,
             settings.startTime,
             settings.firstUnlockPercentage,
             settings.linearVestingOffset,
@@ -56,7 +55,8 @@ describe("SHO Vesting Smart Contract", function() {
             settings.batch1Percentage,
             settings.batch2Delay,
             settings.lockedClaimableTokensOffset,
-            settings.burnRate
+            settings.burnRate,
+            [feeCollector1.address, feeCollector2.address, burnWallet.address]
         );
 
         await vestingToken.transfer(contract.address, parseUnits(100000000));
@@ -79,7 +79,7 @@ describe("SHO Vesting Smart Contract", function() {
 
     const collectFees = async(user, expectedFees) => {
         await contract.collectFees([user.address]);
-        expect(await vestingToken.balanceOf(owner.address)).to.closeTo(parseUnits(expectedFees), getPrecisionLoss());
+        expect(await vestingToken.balanceOf(feeCollector1.address)).to.closeTo(parseUnits(expectedFees), getPrecisionLoss());
     }
 
     const verifyReturnValues = async(
@@ -214,7 +214,7 @@ describe("SHO Vesting Smart Contract", function() {
         });
         
         it("collect fees", async() => {
-            await collectFees(user1, 1678);
+            await collectFees(user1, 1278);
         });
     });
 
@@ -279,7 +279,7 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("eliminate", async() => {
             await time.increase(linearVestingPeriod * 70);
-            await contract.connect(manager).eliminate([user1.address]);
+            await contract.connect(owner).eliminate([user1.address]);
             await verifyReturnValues(user1, 3820, 0, 1400, 420, 980);
         });
 
@@ -365,12 +365,12 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("collect fees", async() => {
             await time.increase(linearVestingPeriod);
-            await collectFees(user1, 420);
+            await collectFees(user1, 20);
         });
 
         it("collect fees", async() => {
             await time.increase(linearVestingPeriod);
-            await collectFees(user1, 440);
+            await collectFees(user1, 40);
         });
 
         it("claim", async() => {
@@ -380,12 +380,37 @@ describe("SHO Vesting Smart Contract", function() {
 
         it("collect fees", async() => {
             await time.increase(linearVestingPeriod);
-            await collectFees(user1, 1730);
+            await collectFees(user1, 1014);
         });
 
         it("collect fees", async() => {
             await time.increase(linearVestingPeriod * 50);
-            await collectFees(user1, 1994);
+            await collectFees(user1, 1278);
+        });
+    });
+
+    describe("TC 7 - collect fees with partial fee", async() => {
+        const linearVestingOffset = 86400 * 90;
+        const linearVestingPeriod = 86400;
+
+        before(async() => {
+            await init({
+                linearVestingOffset,
+                linearVestingPeriod
+            });
+
+            await setUserStats(user1, {
+                hasBatch2Delay: true,
+                totalTokens: parseUnits(5000)
+            });
+        });
+
+        it("claim with fee", async() => {
+            await claim(user1, 200, 500, 200, 0);
+        });
+
+        it("collect fees", async() => {
+            await collectFees(user1, 200);
         });
     });
 });
