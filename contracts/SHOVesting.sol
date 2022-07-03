@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import "hardhat/console.sol";
 
 contract SHOVesting is Ownable, ReentrancyGuard {
     using SafeCast for uint256;
@@ -211,7 +210,7 @@ contract SHOVesting is Ownable, ReentrancyGuard {
         @param extraClaimAmount extra amount
      */
     function claimWithExtra(uint128 extraClaimAmount) external {
-        return _claim(msg.sender, extraClaimAmount);
+        _claim(msg.sender, extraClaimAmount);
     }
 
     // =================== INTERNAL FUNCTIONS  =================== //
