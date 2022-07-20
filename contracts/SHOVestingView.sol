@@ -11,10 +11,12 @@ contract SHOVestingView {
         uint40 eliminatedAt;
         uint128 totalTokens;
         uint128 totalFee;
+        uint128 totalBurned;
         uint128 totalClaimed;
         uint128 totalClaimed1;
         uint128 totalClaimed2;
         uint128 totalClaimedFromLocked;
+        uint128 totalFeeCollected;
     }
 
     function _loadUser(SHOVesting shoVestingContract, address userAddress) internal view returns (User memory) {
@@ -23,12 +25,14 @@ contract SHOVestingView {
             uint40 eliminatedAt,
             uint128 totalTokens,
             uint128 totalFee,
+            uint128 totalBurned,
             uint128 totalClaimed,
             uint128 totalClaimed1,
             uint128 totalClaimed2,
-            uint128 totalClaimedFromLocked
+            uint128 totalClaimedFromLocked,
+            uint128 totalFeeCollected
         ) = shoVestingContract.users(userAddress);
-        return User(hasBatch2Delay, eliminatedAt, totalTokens, totalFee, totalClaimed, totalClaimed1, totalClaimed2, totalClaimedFromLocked);
+        return User(hasBatch2Delay, eliminatedAt, totalTokens, totalFee, totalBurned, totalClaimed, totalClaimed1, totalClaimed2, totalClaimedFromLocked, totalFeeCollected);
     }
 
     function getUserOptions(SHOVesting shoVestingContract, address[] calldata userAddresses) public view returns (uint[] memory userOptions) {
@@ -83,15 +87,12 @@ contract SHOVestingView {
     function getUserTotalUnlocked(SHOVesting shoVestingContract, address userAddress) public view returns (uint) {
         User memory user = _loadUser(shoVestingContract, userAddress);
         uint vestingSchedule = shoVestingContract.getVestingSchedule(userAddress, false);
-        if (vestingSchedule < user.totalFee) {
-            return user.totalClaimed;
-        }
 
         if (user.eliminatedAt > 0) {
-            vestingSchedule = user.totalTokens;
+            vestingSchedule = user.totalTokens - user.totalClaimedFromLocked - user.totalBurned;
         }
 
-        uint totalUnlocked = vestingSchedule - user.totalFee;
+        uint totalUnlocked = vestingSchedule + user.totalClaimedFromLocked - user.totalFee;
         if (totalUnlocked < user.totalClaimed) {
             totalUnlocked = user.totalClaimed;
         }
@@ -113,7 +114,7 @@ contract SHOVestingView {
 
     function getUserVested(SHOVesting shoVestingContract, address userAddress) public view returns (uint) {
         User memory user = _loadUser(shoVestingContract, userAddress);
-        uint totalClaimedAndFee = user.totalClaimed + user.totalFee;
+        uint totalClaimedAndFee = user.totalClaimed + user.totalFee + user.totalBurned;
         uint unlocked = shoVestingContract.getUnlocked(userAddress);
         if (user.totalTokens > totalClaimedAndFee + unlocked) {
             return user.totalTokens - (totalClaimedAndFee + unlocked);
@@ -144,12 +145,16 @@ contract SHOVestingView {
         }
 
         uint currentTokens = shoVestingContract.getVestingSchedule(userAddress, false);
-        uint totalClaimedAndFee = user.totalClaimed + user.totalFee;
+        uint totalClaimedAndFee = user.totalClaimed + user.totalFee - user.totalClaimedFromLocked;
         if (currentTokens < totalClaimedAndFee) {
             currentTokens = totalClaimedAndFee;
         }
 
         uint nextTokens = firstUnlockTokens + linearUnlocksTokens * (linearUnlocksPassed + 1) / shoVestingContract.linearUnlocksCount();
+        if (nextTokens > user.totalTokens - user.totalClaimedFromLocked - user.totalBurned) {
+            nextTokens = user.totalTokens - user.totalClaimedFromLocked - user.totalBurned;
+        }
+
         if (nextTokens > currentTokens) {
             return nextTokens - currentTokens; 
         }

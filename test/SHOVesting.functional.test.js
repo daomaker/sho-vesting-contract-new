@@ -297,9 +297,14 @@ describe("SHO Vesting Smart Contract", function() {
         });
 
         it("verify return values", async() => {
-            await time.increase(linearVestingPeriod * 70)
+            await time.increase(linearVestingPeriod * 70);
             await verifyReturnValues(user1, 3820, 236, 1400, 420, 980);
             await verifyReturnValues2(user1, 3820, 2420, 20, 1180, 1400, 1636, settings.startTime + settings.linearVestingOffset + linearVestingPeriod * 141);
+        });
+
+        it("claim from locked", async() => {
+            await claim(user1, 100, 3920, 0, 400);
+            await verifyReturnValues2(user1, 3920, 3920, 20, 680, 0, 136, settings.startTime + settings.linearVestingOffset + linearVestingPeriod * 141);
         });
     });
 
