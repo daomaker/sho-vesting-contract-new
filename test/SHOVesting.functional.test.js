@@ -2,11 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO Vesting Smart Contract", function() {
-<<<<<<< HEAD
-    let owner, manager, user1, user2, user3, contract, contractView, vestingToken, vestingTokenDecimals, settings;
-=======
     let owner, user1, user2, user3, contract, vestingToken, vestingTokenDecimals, settings;
->>>>>>> master
     
     const parseUnits = (value, decimals = vestingTokenDecimals) => {
         return ethers.utils.parseUnits(value.toString(), decimals);
